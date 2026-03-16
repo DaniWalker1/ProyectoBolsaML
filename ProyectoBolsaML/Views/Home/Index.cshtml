@@ -1,0 +1,176 @@
+﻿@model ProyectoBolsaML.Controllers.DashboardViewModel
+@{
+    ViewData["Title"] = "Dashboard IA";
+}
+
+<div class="container mt-4">
+    <h2 class="mb-4">Evaluador de Acciones con IA</h2>
+
+    <form method="post" class="mb-4 d-flex">
+        <input type="text" name="ticker" class="form-control me-2" placeholder="Ej. AMXL.MX, AAPL, VNQ" value="@Model.Ticker" required style="max-width: 300px;" />
+
+        <select name="horizon" class="form-select me-2" style="max-width: 150px;">
+            <option value="7" selected="@(Model.Horizon == 7)">1 Semana</option>
+            <option value="15" selected="@(Model.Horizon == 15)">15 Días</option>
+            <option value="30" selected="@(Model.Horizon == 30)">1 Mes</option>
+        </select>
+
+        <button type="submit" class="btn btn-primary">Analizar</button>
+    </form>
+
+    @if (ViewBag.Error != null)
+    {
+        <div class="alert alert-danger">@ViewBag.Error</div>
+    }
+
+    @if (Model.HistoricalData.Any() && Model.Prediction != null)
+    {
+        <div class="row mb-4">
+            <div class="col-md-4">
+
+                <div class="card text-white mb-3 @(Model.Prediction.Action == "COMPRAR" ? "bg-success" : Model.Prediction.Action == "VENDER" ? "bg-danger" : "bg-warning")">
+                    <div class="card-body">
+                        <h5 class="card-title">Pronóstico a @Model.Prediction.HorizonDays Días</h5>
+                        <h2 class="mb-0">@Model.Prediction.Action</h2>
+                        <small>Crecimiento: @Model.Prediction.ExpectedGrowthPercentage.ToString("0.00")%</small>
+                    </div>
+                </div>
+
+                <div class="card text-white mb-3 @(Model.Prediction.IsAnomalyDetected ? "bg-danger" : "bg-info")">
+                    <div class="card-body">
+                        <h5 class="card-title">Análisis ML de Anomalías</h5>
+                        @if (Model.Prediction.IsAnomalyDetected)
+                        {
+                            <h4 class="mb-0"><i class="bi bi-exclamation-triangle"></i> ¡ALERTA!</h4>
+                            <small>Comportamiento irracional detectado en el precio.</small>
+                        }
+                        else
+                        {
+                            <h4 class="mb-0">Normal</h4>
+                            <small>Sin picos estadísticos inusuales hoy.</small>
+                        }
+                    </div>
+                </div>
+
+                <div class="card text-dark bg-light mb-3 border-secondary">
+                    <div class="card-body">
+                        <h5 class="card-title">Estabilidad Global (VIX)</h5>
+                        <h3 class="mb-0">@Model.Prediction.GlobalVolatilityVIX.ToString("0.00")</h3>
+                        <small class="@(Model.Prediction.GlobalVolatilityVIX > 25 ? "text-danger fw-bold" : "")">
+                            @Model.Prediction.GlobalStabilityStatus
+                        </small>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="col-md-8">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <canvas id="stockChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+        <script>
+            const ctx = document.getElementById('stockChart').getContext('2d');
+
+            const labels = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.ChartLabels));
+            const historicalPrices = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.ChartHistoricalPrices));
+            const forecastPrices = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.ChartForecastPrices));
+            const sma50Prices = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.ChartSMA50));
+            const rsiValues = @Html.Raw(Newtonsoft.Json.JsonConvert.SerializeObject(Model.ChartRSI));
+
+            const forecastColor = @Model.Prediction.ExpectedGrowthPercentage > 0 ? 'rgba(75, 192, 192, 1)' : 'rgba(255, 99, 132, 1)';
+
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Precio (Cierre)',
+                            data: historicalPrices,
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Predicción (IA)',
+                            data: forecastPrices,
+                            borderColor: forecastColor,
+                            borderWidth: 3,
+                            borderDash: [5, 5],
+                            pointRadius: 3,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Media Móvil (50 días)',
+                            data: sma50Prices,
+                            borderColor: 'rgba(255, 159, 64, 0.8)', // Naranja
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'RSI (14 días)',
+                            data: rsiValues,
+                            borderColor: 'rgba(153, 102, 255, 0.5)', // Morado
+                            borderWidth: 1,
+                            pointRadius: 0,
+                            yAxisID: 'y1', // Este va a un eje Y diferente
+                            borderDash: [2, 2]
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: { display: true },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Precio' }
+                        },
+                        y1: { // Segundo Eje Y para el RSI (0 a 100)
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            min: 0,
+                            max: 100,
+                            title: { display: true, text: 'RSI' },
+                            grid: { drawOnChartArea: false } // Para que las líneas de fondo no se crucen
+                        }
+                    }
+                }
+            });
+
+
+            const connection = new signalR.HubConnectionBuilder()
+                .withUrl("/stockHub")
+                .build();
+
+            connection.on("ReceivePriceUpdate", function (ticker, newPrice) {
+
+                if(ticker === '@Model.Ticker') {
+                    console.log("¡Actualización en vivo!: " + newPrice);
+
+                    document.querySelector("h5").innerText = "Precio Actual: $" + newPrice.toFixed(2) + " (EN VIVO)";
+                }
+            });
+
+            connection.start().catch(function (err) {
+                return console.error(err.toString());
+            });
+        </script>
+    }
+</div>
